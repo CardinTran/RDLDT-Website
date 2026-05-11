@@ -1,11 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef } from "react";
 
 type ShowcaseItem = {
   title: string;
   description: string;
-  palette: [string, string, string];
 };
 
 type RotatingImageShowcaseProps = {
@@ -13,12 +13,13 @@ type RotatingImageShowcaseProps = {
 };
 
 const CARD_WIDTH = 336;
-const AUTO_SPEED = -0.022;
+const AUTO_SPEED = -0.036;
 
 export default function RotatingImageShowcase({ items }: RotatingImageShowcaseProps) {
   const duplicatedItems = useMemo(() => [...items, ...items], [items]);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const offsetRef = useRef(0);
+  const loopWidthRef = useRef(0);
   const autoVelocityRef = useRef(0);
   const inertiaVelocityRef = useRef(0);
   const dragStartXRef = useRef(0);
@@ -36,16 +37,19 @@ export default function RotatingImageShowcase({ items }: RotatingImageShowcasePr
       return;
     }
 
-    const loopWidth = items.length * CARD_WIDTH;
-
-    if (!didInitRef.current) {
-      offsetRef.current = -loopWidth / 2;
-      didInitRef.current = true;
+    if (items.length === 0) {
+      return;
     }
 
-    track.style.transform = `translate3d(${offsetRef.current}px, 0, 0)`;
+    const getLoopWidth = () => track.scrollWidth / 2 || items.length * CARD_WIDTH;
 
     const wrapOffset = (value: number) => {
+      const loopWidth = loopWidthRef.current;
+
+      if (loopWidth <= 0) {
+        return value;
+      }
+
       while (value <= -loopWidth) {
         value += loopWidth;
       }
@@ -57,8 +61,27 @@ export default function RotatingImageShowcase({ items }: RotatingImageShowcasePr
       return value;
     };
 
+    loopWidthRef.current = getLoopWidth();
+
+    if (!didInitRef.current) {
+      offsetRef.current = -loopWidthRef.current / 2;
+      didInitRef.current = true;
+    } else {
+      offsetRef.current = wrapOffset(offsetRef.current);
+    }
+
+    track.style.transform = `translate3d(${offsetRef.current}px, 0, 0)`;
+
     let animationFrame = 0;
     let lastTimestamp = 0;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const resizeObserver = new ResizeObserver(() => {
+      loopWidthRef.current = getLoopWidth();
+      offsetRef.current = wrapOffset(offsetRef.current);
+      track.style.transform = `translate3d(${offsetRef.current}px, 0, 0)`;
+    });
+
+    resizeObserver.observe(track);
 
     const tick = (timestamp: number) => {
       if (lastTimestamp === 0) {
@@ -70,7 +93,7 @@ export default function RotatingImageShowcase({ items }: RotatingImageShowcasePr
 
       if (!isDraggingRef.current) {
         const shouldAutoMove = !isHoveringRef.current && timestamp >= resumeAfterRef.current;
-        const targetAutoVelocity = shouldAutoMove ? AUTO_SPEED : 0;
+        const targetAutoVelocity = shouldAutoMove && !reduceMotion ? AUTO_SPEED : 0;
         const autoBlend = 1 - Math.exp(-delta / 280);
         const inertiaDecay = Math.exp(-delta / 900);
 
@@ -88,6 +111,7 @@ export default function RotatingImageShowcase({ items }: RotatingImageShowcasePr
     animationFrame = window.requestAnimationFrame(tick);
 
     return () => {
+      resizeObserver.disconnect();
       window.cancelAnimationFrame(animationFrame);
     };
   }, [items.length]);
@@ -119,18 +143,23 @@ export default function RotatingImageShowcase({ items }: RotatingImageShowcasePr
       return;
     }
 
-    const loopWidth = items.length * CARD_WIDTH;
+    if (loopWidthRef.current <= 0) {
+      loopWidthRef.current = track.scrollWidth / 2 || items.length * CARD_WIDTH;
+    }
+
     const deltaX = event.clientX - lastPointerXRef.current;
     const deltaTime = Math.max(event.timeStamp - lastPointerTimeRef.current, 1);
 
     offsetRef.current += deltaX;
 
-    while (offsetRef.current <= -loopWidth) {
-      offsetRef.current += loopWidth;
-    }
+    if (loopWidthRef.current > 0) {
+      while (offsetRef.current <= -loopWidthRef.current) {
+        offsetRef.current += loopWidthRef.current;
+      }
 
-    while (offsetRef.current >= 0) {
-      offsetRef.current -= loopWidth;
+      while (offsetRef.current >= 0) {
+        offsetRef.current -= loopWidthRef.current;
+      }
     }
 
     inertiaVelocityRef.current = deltaX / deltaTime;
@@ -183,22 +212,16 @@ export default function RotatingImageShowcase({ items }: RotatingImageShowcasePr
                 resumeAfterRef.current = performance.now();
               }}
             >
-              <div
-                className="showcase-card__image"
-                style={
-                  {
-                    "--showcase-start": item.palette[0],
-                    "--showcase-mid": item.palette[1],
-                    "--showcase-end": item.palette[2],
-                  } as React.CSSProperties
-                }
-              >
+              <div className="showcase-card__image">
+                <Image
+                  src="/RDLBooking.jpg"
+                  alt={`Rising Dragon Lion Dance Team ${item.title.toLowerCase()} performance highlight`}
+                  fill
+                  sizes="(max-width: 640px) 84vw, 336px"
+                  quality={72}
+                  className="showcase-card__photo"
+                />
                 <span className="showcase-card__badge">Image {(index % items.length) + 1}</span>
-                <div className="showcase-card__glyph" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
               </div>
               <div className="showcase-card__body">
                 <h3>{item.title}</h3>
